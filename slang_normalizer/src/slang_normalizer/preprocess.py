@@ -48,9 +48,7 @@ def build_slang_mapping(dataframe: pd.DataFrame) -> dict[str, str]:
     }
 
 
-def normalize_sentence(
-    sentence: str, slang_term: str, literal_paraphrase: str
-) -> str:
+def normalize_sentence(sentence: str, slang_term: str, literal_paraphrase: str) -> str:
     """Replace the annotated slang span in a cleaned sentence."""
 
     normalized_sentence = clean_text(sentence)
