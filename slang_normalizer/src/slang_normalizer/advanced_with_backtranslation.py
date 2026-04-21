@@ -29,13 +29,20 @@ MAX_RETRIES = 1
 JUDGE_MODEL = "deepseek-chat"
 
 JUDGE_SYSTEM_PROMPT = (
-    "You are an expert linguist. Compare the 'Formal Translation' with the "
-    "'Original Meaning'.\n"
-    "Does the translation preserve the core factual meaning?\n"
-    "Note: Since it is translating slang to formal English, a slight loss of "
-    "informal emotional tone is acceptable.\n"
-    "Reply ONLY with a valid JSON in this format:\n"
-    '{"status": "PASS" or "FAIL", "feedback": "Brief reason for failure if any"}'
+    "You are an expert linguist evaluating slang normalization.\n"
+    "Compare the Formal Translation against the Original Meaning.\n"
+    "Use exactly one of these labels:\n"
+    "PASS: The translation preserves the core meaning and does not add false "
+    "facts. Differences in wording are acceptable. Slight loss of slang tone "
+    "is acceptable.\n"
+    "SOFT_FAIL: The translation is mostly correct, but wording, nuance, or "
+    "tone could be improved to better match the original meaning.\n"
+    "HARD_FAIL: The translation changes meaning, omits important "
+    "information, adds unsupported details, or seriously distorts tone.\n"
+    "Reply ONLY with valid JSON in this format:\n"
+    '{"status": "PASS", "feedback": ""} or '
+    '{"status": "SOFT_FAIL", "feedback": "..."} or '
+    '{"status": "HARD_FAIL", "feedback": "..."}'
 )
 
 
@@ -80,25 +87,43 @@ def load_test_records(limit: int) -> list[dict[str, str | int]]:
     return enriched_records[:limit]
 
 
-def build_translation_prompt(
-    record: dict[str, str | int], feedback: str | None = None
-) -> str:
-    prompt = (
-        "### Instruction: Given this is a slang from the "
-        f"{record['region']} in {record['year']}, rewrite the following sentence "
-        "in formal English.\n\n"
-        f"### Input: {record['input']}\n\n"
-        "### Response:"
+def build_initial_prompt(record: dict[str, str | int]) -> str:
+    return (
+        "### Instruction:\n"
+        "Rewrite the following slang sentence in clear formal English.\n"
+        "Preserve the original meaning. Do not add new facts.\n\n"
+        "### Context:\n"
+        f"Region: {record['region']}\n"
+        f"Year: {record['year']}\n\n"
+        "### Input:\n"
+        f"{record['input']}\n\n"
+        "### Response:\n"
     )
 
-    if feedback:
-        prompt += (
-            "\n\nYour previous attempt failed. "
-            f"Feedback: {feedback}. "
-            "Please rewrite it to perfectly match the original meaning."
-        )
 
-    return prompt
+def build_correction_prompt(
+    record: dict[str, str | int],
+    previous_attempt: str,
+    feedback: str,
+    severity: str,
+) -> str:
+    return (
+        "### Instruction:\n"
+        "Rewrite the following slang sentence in clear formal English.\n"
+        "Preserve the original meaning. Do not add new facts.\n"
+        f"Your previous attempt was rated {severity} and did not fully satisfy "
+        "the target meaning.\n\n"
+        "### Context:\n"
+        f"Region: {record['region']}\n"
+        f"Year: {record['year']}\n\n"
+        "### Input:\n"
+        f"{record['input']}\n\n"
+        "### Feedback:\n"
+        f"{feedback}\n\n"
+        "### Previous Attempt:\n"
+        f"{previous_attempt}\n\n"
+        "### Response:\n"
+    )
 
 
 def clean_local_generation(text: str) -> str:
@@ -160,9 +185,9 @@ def parse_verifier_response(content: str) -> dict[str, str]:
     status = str(parsed.get("status", "FAIL")).upper().strip()
     feedback = str(parsed.get("feedback", "")).strip()
 
-    if status not in {"PASS", "FAIL"}:
+    if status not in {"PASS", "SOFT_FAIL", "HARD_FAIL"}:
         return {
-            "status": "FAIL",
+            "status": "HARD_FAIL",
             "feedback": "Verifier returned an invalid status value.",
         }
 
@@ -233,7 +258,7 @@ def main() -> None:
         original_slang = str(record["input"])
         ground_truth = str(record["output"])
 
-        initial_prompt = build_translation_prompt(record)
+        initial_prompt = build_initial_prompt(record)
         initial_translation = generate_local_translation(
             model=model,
             tokenizer=tokenizer,
@@ -253,8 +278,13 @@ def main() -> None:
         if verification_status == "PASS":
             print(f"Entry {index}: PASS")
         else:
-            print(f"Entry {index}: FAIL -> Correcting...")
-            correction_prompt = build_translation_prompt(record, feedback=feedback)
+            print(f"Entry {index}: {verification_status} -> Correcting...")
+            correction_prompt = build_correction_prompt(
+                record=record,
+                previous_attempt=initial_translation,
+                feedback=feedback,
+                severity=verification_status,
+            )
 
             for _ in range(MAX_RETRIES):
                 final_translation = generate_local_translation(
@@ -263,6 +293,21 @@ def main() -> None:
                     prompt=correction_prompt,
                     max_tokens=args.max_tokens,
                 )
+
+                verification = verify_translation(
+                    client=client,
+                    original_meaning=ground_truth,
+                    formal_translation=final_translation,
+                )
+                verification_status = verification["status"]
+                feedback = verification["feedback"]
+
+                if verification_status == "PASS":
+                    print(f"Entry {index}: PASS after correction")
+                    break
+
+            if verification_status != "PASS":
+                print(f"Entry {index}: {verification_status} after correction")
 
         results.append(
             {
