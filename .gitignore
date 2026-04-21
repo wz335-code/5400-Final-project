@@ -11,3 +11,6 @@ wheels/
 
 # Secrets
 .env
+
+# Training outputs
+slang_normalizer/checkpoints/
