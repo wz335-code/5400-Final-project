@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from mlx_lm import generate, load
+from mlx_lm.sample_utils import make_logits_processors
 from openai import OpenAI
 
 from slang_normalizer.prepare_mlx_data import (
@@ -50,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run the advanced back-translation and self-correction pipeline on "
-            "the 500 baseline holdout examples."
+            "the 200 baseline holdout examples."
         )
     )
     parser.add_argument(
@@ -92,6 +93,8 @@ def build_initial_prompt(record: dict[str, str | int]) -> str:
         "### Instruction:\n"
         "Rewrite the following slang sentence in clear formal English.\n"
         "Preserve the original meaning. Do not add new facts.\n\n"
+        "If the sentence is already formal English, return it unchanged.\n"
+        "Output only the rewritten sentence.\n\n"
         "### Context:\n"
         f"Region: {record['region']}\n"
         f"Year: {record['year']}\n\n"
@@ -111,6 +114,7 @@ def build_correction_prompt(
         "### Instruction:\n"
         "Rewrite the following slang sentence in clear formal English.\n"
         "Preserve the original meaning. Do not add new facts.\n"
+        "Output only the rewritten sentence.\n"
         f"Your previous attempt was rated {severity} and did not fully satisfy "
         "the target meaning.\n\n"
         "### Context:\n"
@@ -133,6 +137,10 @@ def clean_local_generation(text: str) -> str:
         cleaned = cleaned.split("### Response:", maxsplit=1)[-1].strip()
 
     cleaned = re.split(r"\n###\s", cleaned, maxsplit=1)[0].strip()
+    cleaned = re.sub(r"<\|[^>]+?\|>", " ", cleaned)
+    cleaned = re.sub(r"[!?.;,:\-]*\s*<\|[^>]+?\|>", " ", cleaned)
+    cleaned = re.sub(r"(!\s*){2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
 
 
@@ -141,12 +149,14 @@ def generate_local_translation(
     tokenizer,
     prompt: str,
     max_tokens: int,
+    logits_processors,
 ) -> str:
     output = generate(
         model,
         tokenizer,
         prompt=prompt,
-        max_tokens=max_tokens,
+        max_tokens=min(max_tokens, 64),
+        logits_processors=logits_processors,
         verbose=False,
     )
     return clean_local_generation(output)
@@ -251,6 +261,12 @@ def main() -> None:
         base_url="https://api.deepseek.com",
     )
     test_records = load_test_records(BASELINE_HOLDOUT_SIZE)
+    logits_processors = make_logits_processors(
+        repetition_penalty=1.1,
+        repetition_context_size=64,
+        presence_penalty=0.1,
+        presence_context_size=64,
+    )
 
     results: list[dict[str, str]] = []
 
@@ -264,6 +280,7 @@ def main() -> None:
             tokenizer=tokenizer,
             prompt=initial_prompt,
             max_tokens=args.max_tokens,
+            logits_processors=logits_processors,
         )
 
         verification = verify_translation(
@@ -292,6 +309,7 @@ def main() -> None:
                     tokenizer=tokenizer,
                     prompt=correction_prompt,
                     max_tokens=args.max_tokens,
+                    logits_processors=logits_processors,
                 )
 
                 verification = verify_translation(

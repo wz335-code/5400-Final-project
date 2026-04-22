@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 from mlx_lm import generate, load
+from mlx_lm.sample_utils import make_logits_processors
 
 from slang_normalizer.prepare_mlx_data import (
     BASELINE_HOLDOUT_SIZE,
@@ -21,7 +23,7 @@ OUTPUT_PATH = REPO_ROOT / "data" / "results_finetuned.jsonl"
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run MLX inference on the 500 baseline holdout examples."
+        description="Run MLX inference on the 200 baseline holdout examples."
     )
     parser.add_argument(
         "--model",
@@ -59,12 +61,32 @@ def load_test_records(limit: int) -> list[dict[str, str | int]]:
 
 def build_prompt(record: dict[str, str | int]) -> str:
     return (
-        "### Instruction: Given this is a slang from the "
-        f"{record['region']} in {record['year']}, rewrite the following sentence "
-        "in formal English.\n\n"
-        f"### Input: {record['input']}\n\n"
-        "### Response:"
+        "### Instruction:\n"
+        "Rewrite the following slang sentence in clear formal English.\n"
+        "Preserve the original meaning. Do not add new facts.\n"
+        "If the sentence is already formal English, return it unchanged.\n"
+        "Output only the rewritten sentence.\n\n"
+        "### Context:\n"
+        f"Region: {record['region']}\n"
+        f"Year: {record['year']}\n\n"
+        "### Input:\n"
+        f"{record['input']}\n\n"
+        "### Response:\n"
     )
+
+
+def clean_generation(text: str) -> str:
+    cleaned = text.strip()
+
+    if "### Response:" in cleaned:
+        cleaned = cleaned.split("### Response:", maxsplit=1)[-1].strip()
+
+    cleaned = re.split(r"\n###\s", cleaned, maxsplit=1)[0].strip()
+    cleaned = re.sub(r"<\|[^>]+?\|>", " ", cleaned)
+    cleaned = re.sub(r"[!?.;,:\-]*\s*<\|[^>]+?\|>", " ", cleaned)
+    cleaned = re.sub(r"(!\s*){2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
 
 def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
@@ -86,16 +108,24 @@ def main() -> None:
     test_records = load_test_records(BASELINE_HOLDOUT_SIZE)
 
     results: list[dict[str, str]] = []
+    logits_processors = make_logits_processors(
+        repetition_penalty=1.1,
+        repetition_context_size=64,
+        presence_penalty=0.1,
+        presence_context_size=64,
+    )
 
     for index, record in enumerate(test_records, start=1):
         prompt = build_prompt(record)
-        prediction = generate(
+        raw_prediction = generate(
             model,
             tokenizer,
             prompt=prompt,
-            max_tokens=args.max_tokens,
+            max_tokens=min(args.max_tokens, 64),
+            logits_processors=logits_processors,
             verbose=False,
-        ).strip()
+        )
+        prediction = clean_generation(raw_prediction)
 
         results.append(
             {

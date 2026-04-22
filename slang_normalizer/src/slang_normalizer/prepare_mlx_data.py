@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 MLX_DATA_DIR = REPO_ROOT / "data" / "mlx"
 TRAIN_PATH = MLX_DATA_DIR / "train.jsonl"
 VALID_PATH = MLX_DATA_DIR / "valid.jsonl"
-BASELINE_HOLDOUT_SIZE = 500
+BASELINE_HOLDOUT_SIZE = 200
 VALID_RATIO = 0.1
 RANDOM_SEED = 42
 

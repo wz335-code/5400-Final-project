@@ -15,7 +15,7 @@ PROMPT = (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INPUT_PATH = REPO_ROOT / "data" / "slang_open_sub_llama3.jsonl"
 OUTPUT_PATH = REPO_ROOT / "data" / "results_baseline.jsonl"
-MAX_EXAMPLES = 500
+MAX_EXAMPLES = 200
 MAX_CONCURRENCY = 5
 
 
