@@ -109,6 +109,25 @@ def parse_args() -> argparse.Namespace:
         default=42,
         help="Random seed.",
     )
+    parser.add_argument(
+        "--logp-reduction",
+        choices=("sum", "mean"),
+        default="mean",
+        help=(
+            "How to aggregate token log-probabilities over the completion. "
+            "'mean' is usually safer when chosen and rejected responses have "
+            "different lengths."
+        ),
+    )
+    parser.add_argument(
+        "--anchor-weight",
+        type=float,
+        default=0.2,
+        help=(
+            "Weight for an auxiliary chosen-response likelihood loss that keeps "
+            "the policy close to fluent supervised behavior."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -223,6 +242,7 @@ def sequence_logps(
     batch: mx.array,
     prompt_lengths: mx.array,
     lengths: mx.array,
+    reduction: str,
 ) -> mx.array:
     inputs = batch[:, :-1]
     targets = batch[:, 1:]
@@ -236,7 +256,14 @@ def sequence_logps(
         steps >= prompt_lengths[:, None],
         steps < lengths[:, None],
     )
-    return (token_log_probs * mask).sum(axis=1)
+    masked_log_probs = token_log_probs * mask
+    completion_logps = masked_log_probs.sum(axis=1)
+
+    if reduction == "mean":
+        token_counts = mx.maximum(mask.sum(axis=1), 1)
+        return completion_logps / token_counts
+
+    return completion_logps
 
 
 def precompute_reference_logps(
@@ -244,6 +271,7 @@ def precompute_reference_logps(
     records: list[dict[str, object]],
     batch_size: int,
     seed: int,
+    reduction: str,
 ) -> list[dict[str, float]]:
     reference_stats: list[dict[str, float]] = [None] * len(records)  # type: ignore
 
@@ -272,12 +300,14 @@ def precompute_reference_logps(
             chosen_batch,
             chosen_prompt_lengths,
             chosen_lengths,
+            reduction,
         )
         rejected_logps = sequence_logps(
             model,
             rejected_batch,
             rejected_prompt_lengths,
             rejected_lengths,
+            reduction,
         )
         mx.eval(chosen_logps, rejected_logps)
 
@@ -313,7 +343,7 @@ def attach_reference_logps(
     return attached
 
 
-def dpo_loss(model, batch, beta: float):
+def dpo_loss(model, batch, beta: float, reduction: str):
     (
         chosen_batch,
         chosen_prompt_lengths,
@@ -330,12 +360,14 @@ def dpo_loss(model, batch, beta: float):
         chosen_batch,
         chosen_prompt_lengths,
         chosen_lengths,
+        reduction,
     )
     policy_rejected_logps = sequence_logps(
         model,
         rejected_batch,
         rejected_prompt_lengths,
         rejected_lengths,
+        reduction,
     )
 
     logits = beta * (
@@ -345,6 +377,44 @@ def dpo_loss(model, batch, beta: float):
     losses = -nn.log_sigmoid(logits)
     accuracy = mx.mean(logits > 0)
     return losses.mean(), accuracy
+
+
+def chosen_anchor_loss(
+    model,
+    batch,
+) -> mx.array:
+    (
+        chosen_batch,
+        chosen_prompt_lengths,
+        chosen_lengths,
+        _rejected_batch,
+        _rejected_prompt_lengths,
+        _rejected_lengths,
+        _ref_chosen_logps,
+        _ref_rejected_logps,
+    ) = batch
+
+    chosen_mean_logps = sequence_logps(
+        model,
+        chosen_batch,
+        chosen_prompt_lengths,
+        chosen_lengths,
+        reduction="mean",
+    )
+    return -chosen_mean_logps.mean()
+
+
+def total_training_loss(
+    model,
+    batch,
+    beta: float,
+    reduction: str,
+    anchor_weight: float,
+) -> mx.array:
+    preference_loss, _ = dpo_loss(model, batch, beta, reduction)
+    if anchor_weight <= 0:
+        return preference_loss
+    return preference_loss + (anchor_weight * chosen_anchor_loss(model, batch))
 
 
 def build_training_batch(batch_examples: list[dict[str, object]]):
@@ -400,6 +470,7 @@ def evaluate_dpo(
     records: list[dict[str, object]],
     batch_size: int,
     beta: float,
+    reduction: str,
 ) -> tuple[float, float]:
     if not records:
         return math.nan, math.nan
@@ -411,7 +482,7 @@ def evaluate_dpo(
     for start in range(0, len(records), batch_size):
         batch_examples = records[start : start + batch_size]
         batch = build_training_batch(batch_examples)
-        loss_value, accuracy = dpo_loss(model, batch, beta)
+        loss_value, accuracy = dpo_loss(model, batch, beta, reduction)
         mx.eval(loss_value, accuracy)
         losses.append(float(loss_value.item()))
         accuracies.append(float(accuracy.item()))
@@ -476,12 +547,14 @@ def main() -> None:
         encoded_train,
         batch_size=args.batch_size,
         seed=args.seed,
+        reduction=args.logp_reduction,
     )
     reference_valid = precompute_reference_logps(
         model,
         encoded_valid,
         batch_size=max(1, min(args.batch_size, len(encoded_valid))),
         seed=args.seed,
+        reduction=args.logp_reduction,
     )
 
     train_data = attach_reference_logps(encoded_train, reference_train)
@@ -505,6 +578,8 @@ def main() -> None:
             "eval_every": args.eval_every,
             "seed": args.seed,
             "max_seq_length": args.max_seq_length,
+            "logp_reduction": args.logp_reduction,
+            "anchor_weight": args.anchor_weight,
             "fine_tune_type": adapter_config.get("fine_tune_type", "lora"),
             "num_layers": adapter_config["num_layers"],
             "lora_parameters": {
@@ -519,7 +594,13 @@ def main() -> None:
     optimizer = optim.AdamW(learning_rate=args.learning_rate)
     loss_value_and_grad = nn.value_and_grad(
         model,
-        lambda current_model, batch: dpo_loss(current_model, batch, args.beta)[0],
+        lambda current_model, batch: total_training_loss(
+            current_model,
+            batch,
+            args.beta,
+            args.logp_reduction,
+            args.anchor_weight,
+        ),
     )
 
     batch_iterator = iterate_training_batches(
@@ -538,10 +619,25 @@ def main() -> None:
         mx.eval(model.parameters(), optimizer.state, loss_value)
 
         if step % 10 == 0 or step == 1:
-            train_loss, train_accuracy = dpo_loss(model, batch, args.beta)
-            mx.eval(train_loss, train_accuracy)
+            total_loss = total_training_loss(
+                model,
+                batch,
+                args.beta,
+                args.logp_reduction,
+                args.anchor_weight,
+            )
+            train_loss, train_accuracy = dpo_loss(
+                model,
+                batch,
+                args.beta,
+                args.logp_reduction,
+            )
+            anchor_loss = chosen_anchor_loss(model, batch)
+            mx.eval(total_loss, train_loss, train_accuracy, anchor_loss)
             print(
-                f"Iter {step}: train_loss={train_loss.item():.4f}, "
+                f"Iter {step}: total_loss={total_loss.item():.4f}, "
+                f"dpo_loss={train_loss.item():.4f}, "
+                f"anchor_loss={anchor_loss.item():.4f}, "
                 f"train_pref_acc={train_accuracy.item():.4f}"
             )
 
@@ -551,6 +647,7 @@ def main() -> None:
                 valid_data,
                 batch_size=max(1, min(args.batch_size, len(valid_data))),
                 beta=args.beta,
+                reduction=args.logp_reduction,
             )
             print(
                 f"Iter {step}: valid_loss={valid_loss:.4f}, "
@@ -568,8 +665,10 @@ def main() -> None:
             save_adapter_weights(model, output_dir, step=step)
             print(f"Saved checkpoint at step {step}")
 
-    save_adapter_weights(model, output_dir)
-    print(f"Saved final DPO adapter weights to {output_dir / 'adapters.safetensors'}")
+    final_path = output_dir / "final_adapters.safetensors"
+    adapter_weights = dict(tree_flatten(model.trainable_parameters()))
+    mx.save_safetensors(str(final_path), adapter_weights)
+    print(f"Saved final-step DPO adapter weights to {final_path}")
 
 
 if __name__ == "__main__":
