@@ -14,3 +14,4 @@ wheels/
 
 # Training outputs
 slang_normalizer/checkpoints/
+slang_normalizer/checkpoints_dpo/

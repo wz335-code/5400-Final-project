@@ -176,7 +176,7 @@ def parse_verifier_response(content: str) -> dict[str, str]:
         match = re.search(r"\{.*\}", content, flags=re.DOTALL)
         if not match:
             return {
-                "status": "FAIL",
+                "status": "HARD_FAIL",
                 "feedback": (
                     "Verifier returned non-JSON output and it could not be parsed."
                 ),
@@ -186,7 +186,7 @@ def parse_verifier_response(content: str) -> dict[str, str]:
             parsed = json.loads(match.group(0))
         except json.JSONDecodeError:
             return {
-                "status": "FAIL",
+                "status": "HARD_FAIL",
                 "feedback": (
                     "Verifier returned malformed JSON and it could not be parsed."
                 ),
@@ -205,6 +205,14 @@ def parse_verifier_response(content: str) -> dict[str, str]:
         feedback = ""
 
     return {"status": status, "feedback": feedback}
+
+
+def verification_rank(status: str) -> int:
+    return {
+        "PASS": 3,
+        "SOFT_FAIL": 2,
+        "HARD_FAIL": 1,
+    }.get(status, 0)
 
 
 def verify_translation(
@@ -291,6 +299,9 @@ def main() -> None:
         verification_status = verification["status"]
         feedback = verification["feedback"]
         final_translation = initial_translation
+        best_status = verification_status
+        best_feedback = feedback
+        best_translation = initial_translation
 
         if verification_status == "PASS":
             print(f"Entry {index}: PASS")
@@ -304,7 +315,7 @@ def main() -> None:
             )
 
             for _ in range(MAX_RETRIES):
-                final_translation = generate_local_translation(
+                candidate_translation = generate_local_translation(
                     model=model,
                     tokenizer=tokenizer,
                     prompt=correction_prompt,
@@ -312,13 +323,29 @@ def main() -> None:
                     logits_processors=logits_processors,
                 )
 
-                verification = verify_translation(
+                candidate_verification = verify_translation(
                     client=client,
                     original_meaning=ground_truth,
-                    formal_translation=final_translation,
+                    formal_translation=candidate_translation,
                 )
-                verification_status = verification["status"]
-                feedback = verification["feedback"]
+                candidate_status = candidate_verification["status"]
+                candidate_feedback = candidate_verification["feedback"]
+
+                if verification_rank(candidate_status) >= verification_rank(
+                    best_status
+                ):
+                    best_translation = candidate_translation
+                    best_status = candidate_status
+                    best_feedback = candidate_feedback
+                else:
+                    print(
+                        f"Entry {index}: correction was worse "
+                        f"({candidate_status} < {best_status}), keeping previous result"
+                    )
+
+                final_translation = best_translation
+                verification_status = best_status
+                feedback = best_feedback
 
                 if verification_status == "PASS":
                     print(f"Entry {index}: PASS after correction")
