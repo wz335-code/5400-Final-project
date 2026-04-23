@@ -1,0 +1,34 @@
+<mxfile host="app.diagrams.net" modified="2026-04-23T00:00:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="slang-normalizer-architecture" name="Slang Normalizer Architecture">
+    <mxGraphModel dx="1180" dy="720" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1180" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="Slang Normalizer Package Architecture" style="text;html=1;strokeColor=none;fillColor=none;fontSize=24;fontStyle=1;fontFamily=Georgia;" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="520" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="data" value="Data Layer&#xa;&#xa;Raw TSV Files&#xa;preprocess.py&#xa;prepare_mlx_data.py&#xa;MLX Train Data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fffaf0;strokeColor=#2f2a24;fontFamily=Georgia;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="35" y="105" width="245" height="510" as="geometry"/>
+        </mxCell>
+        <mxCell id="training" value="Training Layer&#xa;&#xa;train_mlx.py&#xa;SFT Adapter&#xa;prepare_dpo_data.py&#xa;train_dpo_mlx.py&#xa;DPO Adapter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e7f0df;strokeColor=#2f2a24;fontFamily=Georgia;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="330" y="105" width="245" height="510" as="geometry"/>
+        </mxCell>
+        <mxCell id="inference" value="Inference Layer&#xa;&#xa;baseline_eval.py&#xa;finetuned_inference.py&#xa;advanced_with_backtranslation.py&#xa;multi_agent_debate.py&#xa;Result JSONL Files" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e4eef7;strokeColor=#2f2a24;fontFamily=Georgia;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="625" y="105" width="245" height="510" as="geometry"/>
+        </mxCell>
+        <mxCell id="evaluation" value="Evaluation Layer&#xa;&#xa;combine_results.py&#xa;Combined JSONL + CSV&#xa;tests/test_cleaning.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4e3d2;strokeColor=#2f2a24;fontFamily=Georgia;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="920" y="105" width="225" height="510" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-data-train" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#2f2a24;strokeWidth=2;" edge="1" parent="1" source="data" target="training">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-train-infer" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#2f2a24;strokeWidth=2;" edge="1" parent="1" source="training" target="inference">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge-infer-eval" value="" style="endArrow=classic;html=1;rounded=0;strokeColor=#2f2a24;strokeWidth=2;" edge="1" parent="1" source="inference" target="evaluation">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

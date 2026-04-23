@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="720" viewBox="0 0 1180 720" role="img" aria-labelledby="title desc">
+  <title id="title">Slang Normalizer Package Architecture</title>
+  <desc id="desc">Architecture diagram showing how raw data, preprocessing, model training, inference pipelines, and evaluation outputs connect.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f3ea; }
+      .section { fill: #fffaf0; stroke: #2f2a24; stroke-width: 2; rx: 18; }
+      .box { fill: #ffffff; stroke: #2f2a24; stroke-width: 1.7; rx: 12; }
+      .model { fill: #e7f0df; stroke: #2f2a24; stroke-width: 1.7; rx: 12; }
+      .api { fill: #e4eef7; stroke: #2f2a24; stroke-width: 1.7; rx: 12; }
+      .output { fill: #f4e3d2; stroke: #2f2a24; stroke-width: 1.7; rx: 12; }
+      .title { font-family: Georgia, serif; font-size: 26px; font-weight: 700; fill: #2f2a24; }
+      .label { font-family: Georgia, serif; font-size: 15px; font-weight: 700; fill: #2f2a24; }
+      .small { font-family: Georgia, serif; font-size: 12px; fill: #4a4038; }
+      .arrow { stroke: #2f2a24; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .soft { stroke: #7d6b5c; stroke-width: 1.6; fill: none; marker-end: url(#arrowhead-soft); stroke-dasharray: 6 5; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#2f2a24"/>
+    </marker>
+    <marker id="arrowhead-soft" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#7d6b5c"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1180" height="720"/>
+  <text class="title" x="42" y="48">Slang Normalizer Package Architecture</text>
+  <text class="small" x="44" y="72">End-to-end pipeline for slang normalization, local MLX fine-tuning, advanced inference, and evaluation.</text>
+
+  <rect class="section" x="35" y="105" width="245" height="510"/>
+  <text class="label" x="58" y="135">Data Layer</text>
+  <rect class="box" x="58" y="162" width="198" height="70"/>
+  <text class="label" x="82" y="190">Raw TSV Files</text>
+  <text class="small" x="82" y="210">slang_OpenSub.tsv</text>
+  <text class="small" x="82" y="226">negative samples</text>
+  <rect class="box" x="58" y="277" width="198" height="78"/>
+  <text class="label" x="82" y="305">preprocess.py</text>
+  <text class="small" x="82" y="325">clean text</text>
+  <text class="small" x="82" y="341">build JSONL records</text>
+  <rect class="box" x="58" y="405" width="198" height="78"/>
+  <text class="label" x="82" y="432">prepare_mlx_data.py</text>
+  <text class="small" x="82" y="452">metadata prompts</text>
+  <text class="small" x="82" y="468">train / valid split</text>
+  <rect class="output" x="58" y="527" width="198" height="58"/>
+  <text class="label" x="82" y="555">MLX Train Data</text>
+  <text class="small" x="82" y="573">data/mlx/*.jsonl</text>
+
+  <rect class="section" x="330" y="105" width="245" height="510"/>
+  <text class="label" x="353" y="135">Training Layer</text>
+  <rect class="model" x="353" y="162" width="198" height="78"/>
+  <text class="label" x="377" y="190">train_mlx.py</text>
+  <text class="small" x="377" y="210">Llama-3 LoRA SFT</text>
+  <text class="small" x="377" y="226">Apple MLX runtime</text>
+  <rect class="output" x="353" y="290" width="198" height="58"/>
+  <text class="label" x="377" y="318">SFT Adapter</text>
+  <text class="small" x="377" y="336">checkpoints/</text>
+  <rect class="model" x="353" y="398" width="198" height="78"/>
+  <text class="label" x="377" y="426">train_dpo_mlx.py</text>
+  <text class="small" x="377" y="446">preference alignment</text>
+  <text class="small" x="377" y="462">DPO adapter</text>
+  <rect class="box" x="353" y="525" width="198" height="60"/>
+  <text class="label" x="377" y="552">prepare_dpo_data.py</text>
+  <text class="small" x="377" y="570">chosen / rejected pairs</text>
+
+  <rect class="section" x="625" y="105" width="245" height="510"/>
+  <text class="label" x="648" y="135">Inference Layer</text>
+  <rect class="api" x="648" y="153" width="198" height="60"/>
+  <text class="label" x="672" y="181">baseline_eval.py</text>
+  <text class="small" x="672" y="199">DeepSeek baseline</text>
+  <rect class="model" x="648" y="246" width="198" height="62"/>
+  <text class="label" x="672" y="274">finetuned_inference.py</text>
+  <text class="small" x="672" y="292">local SFT / DPO output</text>
+  <rect class="api" x="648" y="342" width="198" height="70"/>
+  <text class="label" x="672" y="370">advanced pipeline</text>
+  <text class="small" x="672" y="390">judge + correction</text>
+  <text class="small" x="672" y="406">DeepSeek verifier</text>
+  <rect class="api" x="648" y="446" width="198" height="70"/>
+  <text class="label" x="672" y="474">multi_agent_debate.py</text>
+  <text class="small" x="672" y="494">3 candidates</text>
+  <text class="small" x="672" y="510">judge synthesis</text>
+  <rect class="output" x="648" y="548" width="198" height="45"/>
+  <text class="label" x="672" y="576">Result JSONL Files</text>
+
+  <rect class="section" x="920" y="105" width="225" height="510"/>
+  <text class="label" x="943" y="135">Evaluation Layer</text>
+  <rect class="box" x="943" y="173" width="178" height="78"/>
+  <text class="label" x="967" y="201">combine_results.py</text>
+  <text class="small" x="967" y="221">merge six outputs</text>
+  <text class="small" x="967" y="237">clean columns</text>
+  <rect class="output" x="943" y="310" width="178" height="76"/>
+  <text class="label" x="967" y="338">Combined Dataset</text>
+  <text class="small" x="967" y="358">JSONL + CSV</text>
+  <text class="small" x="967" y="374">evaluation-ready</text>
+  <rect class="box" x="943" y="454" width="178" height="78"/>
+  <text class="label" x="967" y="482">tests/</text>
+  <text class="small" x="967" y="502">cleaning tests</text>
+  <text class="small" x="967" y="518">quality guardrails</text>
+
+  <path class="arrow" d="M157 232 L157 270"/>
+  <path class="arrow" d="M157 355 L157 398"/>
+  <path class="arrow" d="M157 483 L157 520"/>
+  <path class="arrow" d="M256 556 C292 556 310 530 353 555"/>
+  <path class="arrow" d="M452 240 L452 282"/>
+  <path class="arrow" d="M452 348 L452 390"/>
+  <path class="soft" d="M551 555 C592 540 609 515 648 490"/>
+  <path class="arrow" d="M551 319 C596 318 606 281 648 277"/>
+  <path class="arrow" d="M846 570 C881 570 905 510 943 348"/>
+  <path class="arrow" d="M846 183 C890 183 900 202 943 212"/>
+  <path class="soft" d="M747 516 C744 638 457 660 452 485"/>
+  <text class="small" x="462" y="648">Debate results can become DPO preference data</text>
+</svg>
