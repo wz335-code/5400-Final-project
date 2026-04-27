@@ -1,3 +1,5 @@
+"""Run the advanced judge-guided self-correction pipeline."""
+
 from __future__ import annotations
 
 import argparse
@@ -28,6 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_PATH = REPO_ROOT / "data" / "results_advanced.jsonl"
 MAX_RETRIES = 1
 JUDGE_MODEL = "deepseek-chat"
+# Local model translates first, then DeepSeek verifies the meaning.
 
 JUDGE_SYSTEM_PROMPT = (
     "You are an expert linguist evaluating slang normalization.\n"
@@ -48,6 +51,8 @@ JUDGE_SYSTEM_PROMPT = (
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for the advanced pipeline."""
+
     parser = argparse.ArgumentParser(
         description=(
             "Run the advanced back-translation and self-correction pipeline on "
@@ -82,6 +87,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_test_records(limit: int) -> list[dict[str, str | int]]:
+    """Load the shared holdout set with metadata."""
+
     preprocessed_records = load_preprocessed_records(PREPROCESSED_DATA_PATH)
     rebuilt_records = rebuild_records_with_metadata()
     enriched_records = attach_metadata(preprocessed_records, rebuilt_records)
@@ -89,6 +96,9 @@ def load_test_records(limit: int) -> list[dict[str, str | int]]:
 
 
 def build_initial_prompt(record: dict[str, str | int]) -> str:
+    """Build the first prompt for local translation."""
+
+    # First prompt for the local translation.
     return (
         "### Instruction:\n"
         "Rewrite the following slang sentence in clear formal English.\n"
@@ -110,6 +120,9 @@ def build_correction_prompt(
     feedback: str,
     severity: str,
 ) -> str:
+    """Build the correction prompt from judge feedback."""
+
+    # Second prompt used only when the judge asks for a fix.
     return (
         "### Instruction:\n"
         "Rewrite the following slang sentence in clear formal English.\n"
@@ -131,6 +144,8 @@ def build_correction_prompt(
 
 
 def clean_local_generation(text: str) -> str:
+    """Clean raw local model output before evaluation."""
+
     cleaned = text.strip()
 
     if "### Response:" in cleaned:
@@ -151,6 +166,8 @@ def generate_local_translation(
     max_tokens: int,
     logits_processors,
 ) -> str:
+    """Generate one local translation with the MLX model."""
+
     output = generate(
         model,
         tokenizer,
@@ -163,6 +180,8 @@ def generate_local_translation(
 
 
 def build_verification_payload(original_meaning: str, formal_translation: str) -> str:
+    """Build the user message sent to the semantic judge."""
+
     return (
         f"Original Meaning: {original_meaning}\n"
         f"Formal Translation: {formal_translation}"
@@ -170,6 +189,9 @@ def build_verification_payload(original_meaning: str, formal_translation: str) -
 
 
 def parse_verifier_response(content: str) -> dict[str, str]:
+    """Parse the DeepSeek judge response into status and feedback."""
+
+    # Try to recover valid JSON even if the model adds extra text.
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
@@ -208,6 +230,8 @@ def parse_verifier_response(content: str) -> dict[str, str]:
 
 
 def verification_rank(status: str) -> int:
+    """Map verifier labels to an ordered score."""
+
     return {
         "PASS": 3,
         "SOFT_FAIL": 2,
@@ -218,6 +242,8 @@ def verification_rank(status: str) -> int:
 def verify_translation(
     client: OpenAI, original_meaning: str, formal_translation: str
 ) -> dict[str, str]:
+    """Ask DeepSeek to judge whether a translation preserves the meaning."""
+
     response = client.chat.completions.create(
         model=JUDGE_MODEL,
         temperature=0,
@@ -238,6 +264,8 @@ def verify_translation(
 
 
 def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
+    """Write advanced pipeline outputs to a JSONL file."""
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with output_path.open("w", encoding="utf-8") as output_file:
@@ -246,6 +274,8 @@ def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
 
 
 def main() -> None:
+    """Run the advanced pipeline over the shared holdout set."""
+
     args = parse_args()
 
     load_dotenv(REPO_ROOT / ".env")
@@ -279,6 +309,7 @@ def main() -> None:
     results: list[dict[str, str]] = []
 
     for index, record in enumerate(test_records, start=1):
+        # Start with a local draft, then keep the better verified result.
         original_slang = str(record["input"])
         ground_truth = str(record["output"])
 
@@ -306,6 +337,7 @@ def main() -> None:
         if verification_status == "PASS":
             print(f"Entry {index}: PASS")
         else:
+            # Allow one correction round, but do not replace a better answer.
             print(f"Entry {index}: {verification_status} -> Correcting...")
             correction_prompt = build_correction_prompt(
                 record=record,

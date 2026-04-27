@@ -1,3 +1,5 @@
+"""Build DPO preference pairs from generated debate results."""
+
 from __future__ import annotations
 
 import argparse
@@ -20,9 +22,12 @@ DPO_TRAIN_PATH = REPO_ROOT / "data" / "dpo_train.jsonl"
 DPO_VALID_PATH = REPO_ROOT / "data" / "dpo_valid.jsonl"
 VALID_SIZE = 20
 RANDOM_SEED = 42
+# Build preference pairs for DPO from earlier generated outputs.
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for DPO data preparation."""
+
     parser = argparse.ArgumentParser(
         description=(
             "Build MLX DPO preference data from debate results without "
@@ -87,11 +92,15 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_jsonl(path: Path) -> list[dict[str, str]]:
+    """Load JSONL records from disk."""
+
     with path.open("r", encoding="utf-8") as input_file:
         return [json.loads(line) for line in input_file]
 
 
 def load_test_records(limit: int) -> list[dict[str, str | int]]:
+    """Load the shared holdout records with metadata."""
+
     preprocessed_records = load_preprocessed_records(PREPROCESSED_DATA_PATH)
     rebuilt_records = rebuild_records_with_metadata()
     enriched_records = attach_metadata(preprocessed_records, rebuilt_records)
@@ -99,6 +108,8 @@ def load_test_records(limit: int) -> list[dict[str, str | int]]:
 
 
 def build_prompt(record: dict[str, str | int]) -> str:
+    """Build the prompt text stored in each DPO pair."""
+
     return (
         "### Instruction:\n"
         "Rewrite the following slang sentence in clear formal English.\n"
@@ -115,6 +126,8 @@ def build_prompt(record: dict[str, str | int]) -> str:
 
 
 def normalize(text: str) -> str:
+    """Normalize text for lightweight string comparison."""
+
     cleaned = text.lower().strip()
     cleaned = re.sub(r"<\|[^>]+?\|>", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
@@ -122,10 +135,14 @@ def normalize(text: str) -> str:
 
 
 def similarity(left: str, right: str) -> float:
+    """Compute a simple normalized string similarity score."""
+
     return SequenceMatcher(None, normalize(left), normalize(right)).ratio()
 
 
 def repetition_score(text: str) -> float:
+    """Estimate how repetitive a candidate text is."""
+
     tokens = normalize(text).split()
     if not tokens:
         return 3.0
@@ -134,10 +151,14 @@ def repetition_score(text: str) -> float:
 
 
 def word_count(text: str) -> int:
+    """Count normalized words in a text string."""
+
     return len(normalize(text).split())
 
 
 def length_ratio(left: str, right: str) -> float:
+    """Measure the length gap between two texts."""
+
     left_words = max(1, word_count(left))
     right_words = max(1, word_count(right))
     longer = max(left_words, right_words)
@@ -146,6 +167,8 @@ def length_ratio(left: str, right: str) -> float:
 
 
 def is_noisy_candidate(text: str) -> bool:
+    """Detect obviously noisy or malformed candidate outputs."""
+
     lowered = text.lower()
     if "(no response)" in lowered:
         return True
@@ -159,6 +182,8 @@ def is_noisy_candidate(text: str) -> bool:
 
 
 def critique_penalty(critique: str, label: str) -> float:
+    """Use the judge critique as a weak penalty signal."""
+
     critique_lower = critique.lower()
     marker = f"candidate {label}"
     negative_markers = (
@@ -181,6 +206,9 @@ def critique_penalty(critique: str, label: str) -> float:
 
 
 def choose_rejected(record: dict[str, str], selection_mode: str) -> str:
+    """Choose the rejected response for one DPO preference pair."""
+
+    # Pick a weaker answer that the DPO model should learn to avoid.
     chosen = record["final_best_translation"]
     original = record["original_slang"]
     ground_truth = record["ground_truth"]
@@ -236,6 +264,8 @@ def choose_rejected(record: dict[str, str], selection_mode: str) -> str:
 
 
 def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
+    """Write DPO preference pairs to a JSONL file."""
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with output_path.open("w", encoding="utf-8") as output_file:
@@ -244,7 +274,10 @@ def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
 
 
 def main() -> None:
+    """Create train and validation DPO preference files."""
+
     args = parse_args()
+    # Match debate results with metadata, then convert them into prompt pairs.
     debate_records = load_jsonl(args.input_path)
     metadata_records = load_test_records(len(debate_records))
 

@@ -1,3 +1,5 @@
+"""Create instruction-style training data from raw slang TSV files."""
+
 from __future__ import annotations
 
 import json
@@ -16,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 POSITIVE_DATA_PATH = REPO_ROOT / "data" / "slang_OpenSub.tsv"
 NEGATIVE_DATA_PATH = REPO_ROOT / "data" / "slang_OpenSub_negatives.tsv"
 OUTPUT_PATH = REPO_ROOT / "data" / "slang_open_sub_llama3.jsonl"
+# Build the first JSONL dataset from the raw TSV files.
 
 
 def clean_text(text: str) -> str:
@@ -112,6 +115,8 @@ def build_negative_examples(dataframe: pd.DataFrame) -> list[dict[str, str]]:
 
 
 def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
+    """Write a list of records to a JSONL file."""
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with output_path.open("w", encoding="utf-8") as output_file:
@@ -120,6 +125,9 @@ def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
 
 
 def main() -> None:
+    """Build the main JSONL dataset used by later stages."""
+
+    # Read the source tables and convert them into instruction-style records.
     positive_df = pd.read_csv(POSITIVE_DATA_PATH, sep="\t")
     negative_df = pd.read_csv(NEGATIVE_DATA_PATH, sep="\t")
 

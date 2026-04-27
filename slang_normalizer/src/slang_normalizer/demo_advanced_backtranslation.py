@@ -1,6 +1,9 @@
+"""Run a 5-sentence demo of the advanced self-correction pipeline."""
+
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from pathlib import Path
 
@@ -19,6 +22,7 @@ from slang_normalizer.advanced_with_backtranslation import (
     verify_translation,
     write_jsonl,
 )
+from slang_normalizer.logging_utils import configure_logging
 from slang_normalizer.train_mlx import (
     DEFAULT_ADAPTER_PATH,
     DEFAULT_MODEL,
@@ -28,9 +32,13 @@ from slang_normalizer.train_mlx import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_PATH = REPO_ROOT / "data" / "results_advanced_demo_5.jsonl"
 DEMO_SIZE = 5
+# Small demo script: same advanced logic, but only a few examples.
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for the 5-sentence demo."""
+
     parser = argparse.ArgumentParser(
         description=(
             "Run a small 5-sentence demo of the advanced back-translation and "
@@ -71,6 +79,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Run a small advanced demo and print results in the terminal."""
+
+    configure_logging()
     args = parse_args()
 
     load_dotenv(REPO_ROOT / ".env")
@@ -97,6 +108,7 @@ def main() -> None:
         base_url="https://api.deepseek.com",
     )
     test_records = load_test_records(args.num_samples)
+    logger.info("Loaded %d demo samples", len(test_records))
     logits_processors = make_logits_processors(
         repetition_penalty=1.1,
         repetition_context_size=64,
@@ -107,6 +119,7 @@ def main() -> None:
     results: list[dict[str, str]] = []
 
     for index, record in enumerate(test_records, start=1):
+        # Reuse the advanced pipeline on a much smaller sample set.
         original_slang = str(record["input"])
         ground_truth = str(record["output"])
 
@@ -192,6 +205,7 @@ def main() -> None:
         print(f"Final Translation: {best_translation}")
 
     write_jsonl(results, args.output_path)
+    logger.info("Saved demo outputs to %s", args.output_path)
     print(f"Wrote {len(results)} demo results to {args.output_path}")
 
 

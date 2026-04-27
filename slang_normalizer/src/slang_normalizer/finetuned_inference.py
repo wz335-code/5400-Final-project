@@ -1,13 +1,17 @@
+"""Run direct local inference with the fine-tuned adapter."""
+
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import re
 from pathlib import Path
 
 from mlx_lm import generate, load
 from mlx_lm.sample_utils import make_logits_processors
 
+from slang_normalizer.logging_utils import configure_logging
 from slang_normalizer.prepare_mlx_data import (
     BASELINE_HOLDOUT_SIZE,
     PREPROCESSED_DATA_PATH,
@@ -19,9 +23,13 @@ from slang_normalizer.train_mlx import DEFAULT_ADAPTER_PATH, DEFAULT_MODEL
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_PATH = REPO_ROOT / "data" / "results_finetuned.jsonl"
+# Direct local inference with the fine-tuned adapter.
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for local inference."""
+
     parser = argparse.ArgumentParser(
         description="Run MLX inference on the 200 baseline holdout examples."
     )
@@ -53,6 +61,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_test_records(limit: int) -> list[dict[str, str | int]]:
+    """Load the shared holdout set with metadata."""
+
     preprocessed_records = load_preprocessed_records(PREPROCESSED_DATA_PATH)
     rebuilt_records = rebuild_records_with_metadata()
     enriched_records = attach_metadata(preprocessed_records, rebuilt_records)
@@ -60,6 +70,9 @@ def load_test_records(limit: int) -> list[dict[str, str | int]]:
 
 
 def build_prompt(record: dict[str, str | int]) -> str:
+    """Build the metadata-aware prompt used for local inference."""
+
+    # Add metadata so the model can use region and year context.
     return (
         "### Instruction:\n"
         "Rewrite the following slang sentence in clear formal English.\n"
@@ -76,6 +89,9 @@ def build_prompt(record: dict[str, str | int]) -> str:
 
 
 def clean_generation(text: str) -> str:
+    """Clean the raw generation before saving it."""
+
+    # Remove special tokens and prompt leftovers from the raw output.
     cleaned = text.strip()
 
     if "### Response:" in cleaned:
@@ -90,6 +106,8 @@ def clean_generation(text: str) -> str:
 
 
 def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
+    """Write fine-tuned inference outputs to a JSONL file."""
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with output_path.open("w", encoding="utf-8") as output_file:
@@ -98,6 +116,9 @@ def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
 
 
 def main() -> None:
+    """Run local inference on the shared holdout set."""
+
+    configure_logging()
     args = parse_args()
 
     model, tokenizer = load(
@@ -106,6 +127,7 @@ def main() -> None:
         tokenizer_config={"trust_remote_code": True},
     )
     test_records = load_test_records(BASELINE_HOLDOUT_SIZE)
+    logger.info("Loaded %d fine-tuned evaluation examples", len(test_records))
 
     results: list[dict[str, str]] = []
     logits_processors = make_logits_processors(
@@ -117,6 +139,7 @@ def main() -> None:
 
     for index, record in enumerate(test_records, start=1):
         prompt = build_prompt(record)
+        # Generate one formal rewrite for each test sentence.
         raw_prediction = generate(
             model,
             tokenizer,
@@ -138,6 +161,7 @@ def main() -> None:
         print(f"Completed {index}/{len(test_records)} examples")
 
     write_jsonl(results, args.output_path)
+    logger.info("Saved fine-tuned outputs to %s", args.output_path)
     print(f"Wrote {len(results)} fine-tuned results to {args.output_path}")
 
 

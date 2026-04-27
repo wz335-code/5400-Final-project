@@ -12,6 +12,19 @@ wheels/
 # Secrets
 .env
 
+# Project data and generated artifacts
+data/*
+!data/README.md
+
 # Training outputs
 slang_normalizer/checkpoints/
 slang_normalizer/checkpoints_dpo/
+slang_normalizer/checkpoints_dpo_v2/
+slang_normalizer/checkpoints_dpo_v2_step50/
+slang_normalizer/checkpoints_dpo_v2_step100/
+slang_normalizer/checkpoints_dpo_v3/
+slang_normalizer/data/*
+!slang_normalizer/data/README.md
+
+# macOS noise
+.DS_Store

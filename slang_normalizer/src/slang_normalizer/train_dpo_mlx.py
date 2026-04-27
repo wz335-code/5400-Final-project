@@ -1,3 +1,5 @@
+"""Train a DPO adapter on top of the existing SFT adapter."""
+
 from __future__ import annotations
 
 import argparse
@@ -25,9 +27,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_TRAIN_PATH = REPO_ROOT / "data" / "dpo_train.jsonl"
 DEFAULT_VALID_PATH = REPO_ROOT / "data" / "dpo_valid.jsonl"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "slang_normalizer" / "checkpoints_dpo"
+# Train a DPO adapter on top of the existing SFT adapter.
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for DPO training."""
+
     parser = argparse.ArgumentParser(
         description="Train a DPO LoRA adapter on Apple MLX using preference data."
     )
@@ -132,17 +137,23 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_jsonl(path: Path) -> list[dict[str, str]]:
+    """Load JSONL records from disk."""
+
     with path.open("r", encoding="utf-8") as input_file:
         return [json.loads(line) for line in input_file]
 
 
 def load_adapter_config(adapter_path: Path) -> dict:
+    """Load the adapter configuration JSON file."""
+
     config_path = adapter_path / "adapter_config.json"
     with config_path.open("r", encoding="utf-8") as input_file:
         return json.load(input_file)
 
 
 def ensure_eos(tokens: list[int], eos_token_id: int | None) -> list[int]:
+    """Append EOS when the tokenizer provides one and it is missing."""
+
     if eos_token_id is None:
         return tokens
     if not tokens or tokens[-1] != eos_token_id:
@@ -155,6 +166,9 @@ def encode_dataset(
     tokenizer,
     max_seq_length: int,
 ) -> list[dict[str, object]]:
+    """Tokenize prompt-response pairs and keep only valid examples."""
+
+    # Tokenize prompt + response pairs and keep only valid examples.
     encoded_records: list[dict[str, object]] = []
     eos_token_id = getattr(tokenizer, "eos_token_id", None)
 
@@ -190,6 +204,8 @@ def pad_batch(
     key: str,
     prompt_key: str,
 ) -> tuple[mx.array, mx.array, mx.array]:
+    """Pad a token batch and return tensors plus original lengths."""
+
     lengths = [len(example[key]) for example in examples]
     prompt_lengths = [int(example[prompt_key]) for example in examples]
     max_length = max(lengths)
@@ -211,6 +227,8 @@ def create_batches(
     batch_size: int,
     seed: int,
 ):
+    """Create shuffled mini-batches from encoded records."""
+
     indices = list(range(len(records)))
     random.Random(seed).shuffle(indices)
 
@@ -244,6 +262,8 @@ def sequence_logps(
     lengths: mx.array,
     reduction: str,
 ) -> mx.array:
+    """Compute completion log-probabilities for one batch."""
+
     inputs = batch[:, :-1]
     targets = batch[:, 1:]
     logits = model(inputs)
@@ -273,6 +293,9 @@ def precompute_reference_logps(
     seed: int,
     reduction: str,
 ) -> list[dict[str, float]]:
+    """Precompute reference-model log-probabilities for DPO."""
+
+    # Freeze the starting model as the DPO reference model.
     reference_stats: list[dict[str, float]] = [None] * len(records)  # type: ignore
 
     indexed = list(enumerate(records))
@@ -329,6 +352,8 @@ def attach_reference_logps(
     records: list[dict[str, object]],
     reference_stats: list[dict[str, float]],
 ) -> list[dict[str, object]]:
+    """Attach cached reference scores to encoded DPO examples."""
+
     attached: list[dict[str, object]] = []
 
     for record, stats in zip(records, reference_stats, strict=True):
@@ -344,6 +369,8 @@ def attach_reference_logps(
 
 
 def dpo_loss(model, batch, beta: float, reduction: str):
+    """Compute the core DPO loss and preference accuracy."""
+
     (
         chosen_batch,
         chosen_prompt_lengths,
@@ -383,6 +410,8 @@ def chosen_anchor_loss(
     model,
     batch,
 ) -> mx.array:
+    """Compute a small fluency-preserving loss on chosen responses."""
+
     (
         chosen_batch,
         chosen_prompt_lengths,
@@ -411,6 +440,9 @@ def total_training_loss(
     reduction: str,
     anchor_weight: float,
 ) -> mx.array:
+    """Combine DPO loss with an auxiliary anchor loss."""
+
+    # Combine preference loss with a small fluency anchor loss.
     preference_loss, _ = dpo_loss(model, batch, beta, reduction)
     if anchor_weight <= 0:
         return preference_loss
@@ -418,6 +450,8 @@ def total_training_loss(
 
 
 def build_training_batch(batch_examples: list[dict[str, object]]):
+    """Convert a list of examples into one DPO training batch."""
+
     chosen_batch, chosen_prompt_lengths, chosen_lengths = pad_batch(
         batch_examples,
         key="chosen_tokens",
@@ -454,6 +488,8 @@ def iterate_training_batches(
     batch_size: int,
     seed: int,
 ):
+    """Yield shuffled DPO training batches forever."""
+
     step_seed = seed
     while True:
         indices = list(range(len(records)))
@@ -472,6 +508,8 @@ def evaluate_dpo(
     beta: float,
     reduction: str,
 ) -> tuple[float, float]:
+    """Evaluate loss and preference accuracy on validation data."""
+
     if not records:
         return math.nan, math.nan
 
@@ -492,6 +530,8 @@ def evaluate_dpo(
 
 
 def save_adapter_weights(model, output_dir: Path, step: int | None = None) -> None:
+    """Save the current trainable adapter weights to disk."""
+
     output_dir.mkdir(parents=True, exist_ok=True)
     adapter_weights = dict(tree_flatten(model.trainable_parameters()))
 
@@ -504,6 +544,8 @@ def save_adapter_weights(model, output_dir: Path, step: int | None = None) -> No
 
 
 def main() -> None:
+    """Train the DPO adapter and save checkpoints."""
+
     args = parse_args()
     ensure_model_access(args.model)
 
@@ -613,6 +655,7 @@ def main() -> None:
     print(f"Starting DPO training for {args.iters} iterations")
 
     for step in range(1, args.iters + 1):
+        # Train on one batch, then periodically report and save progress.
         batch = next(batch_iterator)
         loss_value, grads = loss_value_and_grad(model, batch)
         optimizer.update(model, grads)

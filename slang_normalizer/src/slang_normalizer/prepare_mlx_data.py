@@ -1,3 +1,5 @@
+"""Prepare MLX train and validation files with metadata-aware prompts."""
+
 from __future__ import annotations
 
 import json
@@ -24,9 +26,12 @@ VALID_PATH = MLX_DATA_DIR / "valid.jsonl"
 BASELINE_HOLDOUT_SIZE = 200
 VALID_RATIO = 0.1
 RANDOM_SEED = 42
+# Prepare MLX train and validation files from the processed dataset.
 
 
 def load_preprocessed_records(path: Path) -> list[dict[str, str]]:
+    """Load processed JSONL records from disk."""
+
     with path.open("r", encoding="utf-8") as input_file:
         return [json.loads(line) for line in input_file]
 
@@ -34,9 +39,12 @@ def load_preprocessed_records(path: Path) -> list[dict[str, str]]:
 def build_positive_examples_with_metadata(
     dataframe: pd.DataFrame, slang_mapping: dict[str, str]
 ) -> list[dict[str, str | int]]:
+    """Build positive examples while keeping region and year metadata."""
+
     examples: list[dict[str, str | int]] = []
 
     for _, row in dataframe.dropna(subset=["SENTENCE", "SLANG_TERM"]).iterrows():
+        # Keep the metadata so it can be used inside the training prompt.
         cleaned_input = clean_text(row["SENTENCE"])
         slang_term = clean_text(row["SLANG_TERM"])
         literal_paraphrase = slang_mapping.get(slang_term)
@@ -67,6 +75,8 @@ def build_positive_examples_with_metadata(
 def build_negative_examples_with_metadata(
     dataframe: pd.DataFrame,
 ) -> list[dict[str, str | int]]:
+    """Build negative identity examples with metadata."""
+
     examples: list[dict[str, str | int]] = []
 
     for _, row in dataframe.dropna(subset=["SENTENCE"]).iterrows():
@@ -89,6 +99,8 @@ def build_negative_examples_with_metadata(
 
 
 def rebuild_records_with_metadata() -> list[dict[str, str | int]]:
+    """Recreate processed records directly from the source TSV files."""
+
     positive_df = pd.read_csv(POSITIVE_DATA_PATH, sep="\t")
     negative_df = pd.read_csv(NEGATIVE_DATA_PATH, sep="\t")
     slang_mapping = build_slang_mapping(positive_df)
@@ -102,6 +114,8 @@ def attach_metadata(
     preprocessed_records: list[dict[str, str]],
     rebuilt_records: list[dict[str, str | int]],
 ) -> list[dict[str, str | int]]:
+    """Attach metadata to processed records after checking row alignment."""
+
     if len(preprocessed_records) != len(rebuilt_records):
         raise ValueError(
             "The rebuilt dataset does not match slang_open_sub_llama3.jsonl in "
@@ -137,6 +151,8 @@ def attach_metadata(
 
 
 def format_for_mlx(record: dict[str, str | int]) -> dict[str, str]:
+    """Convert one record into the text format expected by MLX."""
+
     return {
         "text": (
             "### Instruction: Given this is slang from the "
@@ -151,6 +167,8 @@ def format_for_mlx(record: dict[str, str | int]) -> dict[str, str]:
 def split_records(
     records: list[dict[str, str | int]], valid_ratio: float, seed: int
 ) -> tuple[list[dict[str, str | int]], list[dict[str, str | int]]]:
+    """Shuffle records and split them into train and validation sets."""
+
     shuffled_records = list(records)
     random.Random(seed).shuffle(shuffled_records)
 
@@ -161,6 +179,8 @@ def split_records(
 
 
 def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
+    """Write MLX-ready records to a JSONL file."""
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with output_path.open("w", encoding="utf-8") as output_file:
@@ -169,6 +189,9 @@ def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
 
 
 def main() -> None:
+    """Create MLX train and validation files from the processed dataset."""
+
+    # Keep the first holdout slice for evaluation, then split the rest.
     preprocessed_records = load_preprocessed_records(PREPROCESSED_DATA_PATH)
 
     if len(preprocessed_records) <= BASELINE_HOLDOUT_SIZE:

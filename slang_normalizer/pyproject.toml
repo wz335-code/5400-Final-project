@@ -1,7 +1,7 @@
 [project]
 name = "slang-normalizer"
 version = "0.1.0"
-description = "Add your description here"
+description = "A research package for slang normalization with local MLX fine-tuning and evaluation pipelines."
 readme = "README.md"
 authors = [
     { name = "wz335", email = "wz335@georgetown.edu" }
@@ -20,6 +20,20 @@ dependencies = [
 [build-system]
 requires = ["uv_build>=0.11.6,<0.12.0"]
 build-backend = "uv_build"
+
+[project.scripts]
+slang-normalizer-preprocess = "slang_normalizer.preprocess:main"
+slang-normalizer-prepare-mlx = "slang_normalizer.prepare_mlx_data:main"
+slang-normalizer-train-mlx = "slang_normalizer.train_mlx:main"
+slang-normalizer-download-metadata = "slang_normalizer.download_benchmark_metadata:main"
+slang-normalizer-baseline = "slang_normalizer.baseline_eval:run"
+slang-normalizer-finetuned = "slang_normalizer.finetuned_inference:main"
+slang-normalizer-advanced = "slang_normalizer.advanced_with_backtranslation:main"
+slang-normalizer-debate = "slang_normalizer.multi_agent_debate:run"
+slang-normalizer-demo = "slang_normalizer.demo_advanced_backtranslation:main"
+slang-normalizer-prepare-dpo = "slang_normalizer.prepare_dpo_data:main"
+slang-normalizer-train-dpo = "slang_normalizer.train_dpo_mlx:main"
+slang-normalizer-combine = "slang_normalizer.combine_results:main"
 
 [dependency-groups]
 dev = [

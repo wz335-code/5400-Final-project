@@ -1,3 +1,5 @@
+"""Run the multi-agent debate pipeline for slang normalization."""
+
 from __future__ import annotations
 
 import argparse
@@ -29,6 +31,7 @@ OUTPUT_PATH = REPO_ROOT / "data" / "results_debate.jsonl"
 TEST_LIMIT = 200
 MAX_CONCURRENCY = 10
 JUDGE_MODEL = "deepseek-chat"
+# This pipeline compares three local candidates and asks DeepSeek to choose.
 DEBATE_SYSTEM_PROMPT = """You are the head judge in a linguistic debate.
 Your goal is to translate slang into formal English
 without losing the core factual meaning.
@@ -43,6 +46,8 @@ Reply ONLY with a valid JSON in this exact format:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for debate inference."""
+
     parser = argparse.ArgumentParser(
         description=("Run multi-agent debate inference on the first 200 test examples.")
     )
@@ -74,6 +79,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_test_records(limit: int) -> list[dict[str, str | int]]:
+    """Load the shared holdout set with metadata."""
+
     preprocessed_records = load_preprocessed_records(PREPROCESSED_DATA_PATH)
     rebuilt_records = rebuild_records_with_metadata()
     enriched_records = attach_metadata(preprocessed_records, rebuilt_records)
@@ -81,6 +88,8 @@ def load_test_records(limit: int) -> list[dict[str, str | int]]:
 
 
 def build_brainstorm_prompt(record: dict[str, str | int]) -> str:
+    """Build the prompt used for each local candidate."""
+
     return (
         "### Instruction:\n"
         "Rewrite the following slang sentence in clear formal English.\n"
@@ -96,6 +105,8 @@ def build_brainstorm_prompt(record: dict[str, str | int]) -> str:
 
 
 def clean_local_generation(text: str) -> str:
+    """Clean the raw local candidate output."""
+
     cleaned = text.strip()
 
     if "### Response:" in cleaned:
@@ -117,6 +128,9 @@ def generate_candidate(
     sampler,
     logits_processors,
 ) -> str:
+    """Generate one local candidate translation."""
+
+    # Use sampling so the three candidates are not identical.
     output = generate(
         model,
         tokenizer,
@@ -130,6 +144,8 @@ def generate_candidate(
 
 
 def build_judge_payload(record: dict[str, str | int]) -> str:
+    """Build the judge payload with three candidate translations."""
+
     return (
         f"Original Slang: {record['original_slang']}\n"
         f"Literal Meaning: {record['ground_truth']}\n"
@@ -142,6 +158,8 @@ def build_judge_payload(record: dict[str, str | int]) -> str:
 def parse_judge_response(
     content: str, fallback_record: dict[str, str]
 ) -> dict[str, str]:
+    """Parse the judge response into critique and final translation."""
+
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
@@ -186,6 +204,9 @@ async def judge_and_synthesize(
     semaphore: asyncio.Semaphore,
     record: dict[str, str],
 ) -> dict[str, str]:
+    """Ask DeepSeek to critique candidates and synthesize the best answer."""
+
+    # DeepSeek critiques the candidates and writes one final answer.
     async with semaphore:
         response = await client.chat.completions.create(
             model=JUDGE_MODEL,
@@ -211,6 +232,8 @@ async def judge_and_synthesize(
 
 
 def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
+    """Write debate results to a JSONL file."""
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with output_path.open("w", encoding="utf-8") as output_file:
@@ -219,6 +242,8 @@ def write_jsonl(records: list[dict[str, str]], output_path: Path) -> None:
 
 
 async def main() -> None:
+    """Run multi-agent debate inference on the shared holdout set."""
+
     args = parse_args()
 
     load_dotenv(REPO_ROOT / ".env")
@@ -253,6 +278,7 @@ async def main() -> None:
     candidate_records: list[dict[str, str]] = []
 
     for index, record in enumerate(test_records, start=1):
+        # Local generation stays sequential, then API judging runs in parallel.
         prompt = build_brainstorm_prompt(record)
 
         candidate_a = generate_candidate(
@@ -307,5 +333,11 @@ async def main() -> None:
     print(f"Wrote {len(results)} debate results to {args.output_path}")
 
 
-if __name__ == "__main__":
+def run() -> None:
+    """Run the async debate entry point from a console script."""
+
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    run()

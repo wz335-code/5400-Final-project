@@ -1,13 +1,20 @@
+"""Merge all experiment outputs into one evaluation-ready dataset."""
+
 from __future__ import annotations
 
 import csv
 import json
+import logging
 from pathlib import Path
+
+from slang_normalizer.logging_utils import configure_logging
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = REPO_ROOT / "data"
 OUTPUT_PATH = DATA_DIR / "results_combined_for_evaluation.jsonl"
 CSV_OUTPUT_PATH = DATA_DIR / "results_combined_for_evaluation.csv"
+# Merge all model outputs into one evaluation table.
+logger = logging.getLogger(__name__)
 
 BASELINE_PATH = DATA_DIR / "results_baseline.jsonl"
 FINETUNED_PATH = DATA_DIR / "results_finetuned.jsonl"
@@ -18,6 +25,8 @@ DPO_ADVANCED_PATH = DATA_DIR / "results_dpo_advanced.jsonl"
 
 
 def load_jsonl(path: Path) -> list[dict[str, str]]:
+    """Load JSONL records from disk."""
+
     with path.open("r", encoding="utf-8") as input_file:
         return [json.loads(line) for line in input_file]
 
@@ -31,6 +40,9 @@ def validate_alignment(
     dpo_record: dict[str, str],
     dpo_advanced_record: dict[str, str],
 ) -> None:
+    """Check that one row matches across all result files."""
+
+    # Every row must refer to the same original sample.
     originals = {
         baseline_record["original_sentence"],
         finetuned_record["original_sentence"],
@@ -56,6 +68,10 @@ def validate_alignment(
 
 
 def main() -> None:
+    """Create merged JSONL and CSV files for evaluation."""
+
+    configure_logging()
+    # Load the six result files produced by different pipelines.
     baseline_records = load_jsonl(BASELINE_PATH)
     finetuned_records = load_jsonl(FINETUNED_PATH)
     advanced_records = load_jsonl(ADVANCED_PATH)
@@ -128,11 +144,13 @@ def main() -> None:
         for record in merged_records:
             output_file.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+    # Export CSV too for spreadsheet-based evaluation.
     with CSV_OUTPUT_PATH.open("w", encoding="utf-8", newline="") as output_file:
         writer = csv.DictWriter(output_file, fieldnames=list(merged_records[0].keys()))
         writer.writeheader()
         writer.writerows(merged_records)
 
+    logger.info("Merged %d rows into evaluation outputs", len(merged_records))
     print(f"Merged {len(merged_records)} rows into {OUTPUT_PATH}")
     print(f"Wrote CSV export to {CSV_OUTPUT_PATH}")
 

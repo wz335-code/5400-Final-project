@@ -1,7 +1,10 @@
+"""Write and optionally run the MLX LoRA training configuration."""
+
 from __future__ import annotations
 
 import argparse
 import json
+import logging
 import shlex
 import subprocess
 from pathlib import Path
@@ -15,6 +18,8 @@ DEFAULT_CHECKPOINT_DIR = REPO_ROOT / "slang_normalizer" / "checkpoints"
 DEFAULT_CONFIG_PATH = DEFAULT_CHECKPOINT_DIR / "mlx_lora_config.yaml"
 DEFAULT_ADAPTER_PATH = DEFAULT_CHECKPOINT_DIR / "llama3_slang_lora"
 DEFAULT_MODEL = "meta-llama/Meta-Llama-3-8B-Instruct"
+# Create the MLX config and optionally launch LoRA training.
+logger = logging.getLogger(__name__)
 
 
 def build_training_config(
@@ -26,6 +31,9 @@ def build_training_config(
     lora_rank: int,
     model: str,
 ) -> dict[str, object]:
+    """Build the MLX LoRA training configuration dictionary."""
+
+    # Keep the main training settings in one place.
     return {
         "model": model,
         "train": True,
@@ -52,6 +60,8 @@ def build_training_config(
 
 
 def write_config(config: dict[str, object], config_path: Path) -> None:
+    """Write the MLX config file to disk."""
+
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
     with config_path.open("w", encoding="utf-8") as output_file:
@@ -60,10 +70,15 @@ def write_config(config: dict[str, object], config_path: Path) -> None:
 
 
 def build_command(config_path: Path) -> list[str]:
+    """Build the command used to launch MLX LoRA training."""
+
     return ["mlx_lm.lora", "--config", str(config_path)]
 
 
 def ensure_model_access(model: str) -> None:
+    """Check that the selected Hugging Face model can be accessed."""
+
+    # Check gated-model access before starting a long training run.
     if Path(model).exists():
         return
 
@@ -90,6 +105,8 @@ def ensure_model_access(model: str) -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for MLX training."""
+
     parser = argparse.ArgumentParser(
         description="Create the MLX LoRA training config and optionally run training."
     )
@@ -150,6 +167,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Create the training config and optionally launch training."""
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s | %(name)s | %(message)s",
+    )
     args = parse_args()
 
     config = build_training_config(
@@ -170,9 +193,12 @@ def main() -> None:
     print(f"Adapter checkpoints will be saved under {args.adapter_path}")
     print("Run training with:")
     print(f"uv run {printable_command}")
+    logger.info("Training config written to %s", args.config_path)
 
     if args.run:
+        # Run the MLX command only after the config file is ready.
         ensure_model_access(args.model)
+        logger.info("Starting MLX LoRA training")
         subprocess.run(command, cwd=REPO_ROOT / "slang_normalizer", check=True)
 
 

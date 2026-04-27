@@ -6,6 +6,11 @@ raw slang datasets, converts them into instruction-tuning data, fine-tunes a
 local Llama-3 model with Apple MLX, compares multiple inference strategies, and
 exports a combined evaluation dataset.
 
+## Team Members
+
+- Wenhao Zhou
+- Renqing Liu
+
 The high-level research question is:
 
 > Can a local fine-tuned Llama-3 model normalize slang into formal English, and
@@ -73,6 +78,13 @@ This project uses `uv` for dependency management.
 uv sync
 ```
 
+You can also recreate the environment with Conda:
+
+```bash
+conda env create -f ../environment.yml
+conda activate slang-normalizer
+```
+
 The DeepSeek API key should be stored in the project root `.env` file:
 
 ```text
@@ -80,6 +92,37 @@ DEEPSEEK_API_KEY=your_key_here
 ```
 
 The `.env` file is intentionally ignored by Git.
+
+## Reproducibility Notes
+
+- The package is designed so each experiment can be reproduced with a single
+  script command.
+- `uv run slang-normalizer-download-metadata` downloads the public benchmark
+  metadata package from the source repository.
+- For a clean public submission, large raw data files, generated result files,
+  and model checkpoints should be stored with Git LFS or downloaded from cloud
+  storage into the local `data/` directory before running the package.
+- The project currently expects the raw data and generated artifacts to exist in
+  the project-level `data/` directory.
+
+## Package Commands
+
+After `uv sync`, you can also run the main workflows through package commands:
+
+```bash
+uv run slang-normalizer-download-metadata
+uv run slang-normalizer-preprocess
+uv run slang-normalizer-prepare-mlx
+uv run slang-normalizer-train-mlx
+uv run slang-normalizer-baseline
+uv run slang-normalizer-finetuned
+uv run slang-normalizer-advanced
+uv run slang-normalizer-debate
+uv run slang-normalizer-demo
+uv run slang-normalizer-prepare-dpo
+uv run slang-normalizer-train-dpo
+uv run slang-normalizer-combine
+```
 
 ## Demonstration of Key Features
 
