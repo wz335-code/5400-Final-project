@@ -105,6 +105,24 @@ The `.env` file is intentionally ignored by Git.
 - The project currently expects the raw data and generated artifacts to exist in
   the project-level `data/` directory.
 
+## Final Submission Note
+
+This repository includes the full project code, the environment file, the test
+files, and the package architecture diagram.
+
+To reproduce the main workflow, first create the environment, then run the
+package commands listed below.
+
+Some experiments also need external access:
+
+- a valid DeepSeek API key
+- access to the selected Hugging Face model
+- local or downloaded data files described in `data/README.md`
+
+Large data files, generated result files, and model checkpoints are not kept in
+the public GitHub repository. They should be downloaded, generated locally, or
+stored with cloud storage or Git LFS when needed.
+
 ## Package Commands
 
 After `uv sync`, you can also run the main workflows through package commands:
